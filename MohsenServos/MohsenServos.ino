@@ -6,8 +6,6 @@
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-int 
-
 //use this function to control servos
 
 void channel(int servo ,int angle)
