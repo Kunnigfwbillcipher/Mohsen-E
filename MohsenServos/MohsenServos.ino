@@ -14,7 +14,7 @@ void channel(int servo ,int angle)
   pwm.setPWM(servo,0,pulse);
 } 
 //channel(3,90); as example
-//sense i got different servos so i should tone every kind of the 3 kinds if there were any problem by changing the min and max pulse
+//since i got different servos so i should tone every kind of the 3 kinds if there were any problem by changing the min and max pulse
 void leftEye    (int angle)  { channel(0,  angle); }
 void rightEye   (int angle)  { channel(1,  angle); }
 void leftjoint  (int angle)  { channel(2,  angle); }
