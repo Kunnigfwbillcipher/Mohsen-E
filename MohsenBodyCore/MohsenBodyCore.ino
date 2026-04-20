@@ -1,11 +1,33 @@
 #include <Servo.h>
 
-Servo LeftA;
-Servo RightA;
-Servo HandL;
-Servo HandR;
+#include <Adafruit_PWMServoDriver.h>
 
-Servo Door;
+#define min 150  
+#define max 600 // adjust if the servo isn't reaching its peak angle
+
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
+//use this function to control servos
+
+void channel(int servo ,int angle)
+{
+  int pulse = map(angle,0,180,min,max); 
+  pwm.setPWM(servo,0,pulse);
+} 
+//channel(3,90); as example
+//since i got different servos so i should tone every kind of the 3 kinds if there were any problem by changing the min and max pulse
+void leftEye    (int angle)  { channel(7,  angle); }
+void rightEye   (int angle)  { channel(8,  angle); }
+void leftJoint  (int angle)  { channel(6,  angle); }
+void rightJoint (int angle)  { channel(3,  angle); }
+void leftRight  (int angle)  { channel(4,  angle); } // To look left and right and might be tilting so i dunno i would leavt it for now
+void botNeck    (int angle)  { channel(9,  angle); }
+void topNeck    (int angle)  { channel(10,  angle); }
+void leftArm    (int angle)  { channel(5,  angle); }
+void rightArm   (int angle)  { channel(2,  angle); }
+void leftGrip   (int angle)  { channel(4,  angle); }
+void rightGrip  (int angle)  { channel(1, angle); }
+void Door       (int angle)  { channel(0, angle); }
 
 
 #define TRIG_PIN 2
@@ -23,10 +45,10 @@ Servo Door;
 //#define FULL_SPEED  255
 #define MID_SPEED   180
 
-char direction,mode,category;
+char direction,mode,category,object;
 int angle;
 float distance;
-
+int time = millis();
 
 
 float setPoint = 20.0;
@@ -59,14 +81,6 @@ void setup() {
   
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  
-  
-  LeftA.attach(A0);
-  RightA.attach(A2);
-  Door.attach(A1);
-  HandR.attach(A3);
-  HandL.attach(A4);
-  Servo_Base();
 }
 
 void loop() {
@@ -75,7 +89,7 @@ void loop() {
 	char Buffer[50];
     Serial.readBytesUntil('\n',Buffer,sizeof(Buffer));
     
-    sscanf(Buffer,"%c,%c,%c,%d",&mode,&direction,&category,&angle);
+    sscanf(Buffer,"%c,%c,%c,%c,%d",&mode,&direction,&category,&object,&angle);
   }
   
   distance = getDistance();
@@ -90,10 +104,44 @@ void loop() {
   	    moveForward(calculatePID_speed());
       }
     }
+    if(distance < 20){
+       stop();
+      if(object == 'G'){
+        turnRight(10);
+        leftArm(0);
+        leftGrip(0);
+        leftArm(90);
+        Door(180);
+        leftJoint(180);
+        leftGrip(180);
+        leftJoint(180);
+        Door(0);
+      }else if(object == 'T'){
+        turnLeft(10);
+        rightArm(0);
+        rightGrip(0);
+        rightArm(90);
+        Door(180);
+        rightJoint(180);
+        rightGrip(180);
+        rightJoint(180);
+        Door(0);
+      }
+    }
   }else if(mode = 'F'){
     switch(category){
       case '0':{
-        
+         moveForward(calculatePID_speed());
+         if(distance < 20){
+          stop();
+          rightArm(180);
+         }
+         if(millis() - time < 5000){
+           rightGrip(0);
+           if((millis() - time) % 2000 < 1000)
+             rightGrip(180);
+         }
+        }
         break;
       } 
       case '1':{
@@ -105,6 +153,9 @@ void loop() {
         break;
       }
     }
+  }
+  if(millis() - time > 5000){
+    time = millis();
   }
 }
 float getDistance()
@@ -149,15 +200,6 @@ int calculatePID_speed()
     previousTime = currentTime;
 
     return motorSpeed;
-}
-void Servo_Base(){
-  
-  LeftA.write(90);
-  RightA.write(90);
-  
-  Door.write(0);
-  HandR.write(0);
-  HandL.write(0);
 }
 void moveForward(int speed ) {
   
@@ -210,7 +252,7 @@ void turnLeft(int time){
   delay(time);
   
 }
-void stopRobot() {
+void stop() {
   
   analogWrite(EN_A, 0);
   digitalWrite(IN1, LOW);
