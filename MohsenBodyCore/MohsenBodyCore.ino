@@ -128,7 +128,7 @@ void loop() {
         Door(0);
       }
     }
-  }else if(mode = 'F'){
+  }else if(mode == 'F'){
     switch(category){
       case '0':{
          moveForward(calculatePID_speed());
