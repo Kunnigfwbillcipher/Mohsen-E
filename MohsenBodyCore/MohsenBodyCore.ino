@@ -1,11 +1,12 @@
 #include <Servo.h>
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+#include <MPU6050_light.h> 
 
 // 1. التعريفات الأساسية (Global Variables)
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+MPU6050 mpu(Wire);
 
-Servo Door; // سيرفو الباب موصل مباشرة بالأردوينو
 #define SERVO_MIN 150
 #define SERVO_MAX 600
 
@@ -19,8 +20,11 @@ Servo Door; // سيرفو الباب موصل مباشرة بالأردوينو
 #define IN4 4
 #define MID_SPEED 180
 
+const int TARGET_DIST = 6; 
+const int DIST_THRESHOLD = 1;
 int distance;
 int Target = 0;
+char cmd;
 
 
 void channel(int servo, int angle) {
@@ -41,6 +45,48 @@ void rightArm(int a)  { channel(8, a); }
 void leftGrip(int a)  { channel(9, a); }
 void rightGrip(int a) { channel(10, a); }
 void door(int a)      { channel(11, a); }
+
+void Expressions(int index){
+  switch(index){
+    case 0:leftEye(180);rightEye(180);//Angry
+    break;
+    case 1: leftEye(90);rightEye(90); //Regular
+    break;
+    case 2:leftEye(45);rightEye(45);//Empathy
+    break;
+    case 3: leftEye(0);rightEye(0); //Terrified
+  }
+    
+  
+}
+
+int getDistance() {
+  digitalWrite(TRIG_PIN, LOW); delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH); delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  return duration * 0.034 / 2;
+}
+
+void alignToObject() {
+  stopMoving();
+  while (true) {
+    distance = getDistance();
+    if (distance > (TARGET_DIST + DIST_THRESHOLD)) {
+      analogWrite(EN_A, 120); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+      analogWrite(EN_B, 120); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+    } 
+    else if (distance < (TARGET_DIST - DIST_THRESHOLD) && currentDist > 0) {
+      analogWrite(EN_A, 120); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+      analogWrite(EN_B, 120); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
+    } 
+    else {
+      stopMoving();
+      break; 
+    }
+    delay(50); 
+  }
+}
 
 void stopMoving() {
   analogWrite(EN_A, 0); digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
@@ -79,6 +125,8 @@ void neutral() {
 // 3. دوال الأطوار (Sequences)
 void objectDetectionSequence() {
   stopMoving();
+  Expression(1);
+  alignToObject();
   delay(300);
   sweep(&leftArm, 90, 30, 800);
   sweep(&leftJoint, 0, 45, 600);
@@ -102,14 +150,20 @@ void objectDetectionSequence() {
 }
 
 void faceDetectionSequence() {
+  bool reached = false,faceLocked = false;
+  stopMoving();
+  Expression(3);
   sweep(&botNeck, 90, 120, 500);
   sweep(&topNeck, 90, 120, 500);
   
-  bool faceLocked = false;
   unsigned long steerLast = millis();
   int steerAngle = 45;
   leftRight(steerAngle);
 
+  mpu.update();
+  float targetHeading = mpu.getAngleZ(); // Lock current heading
+  float Kp = 4.5; // Precision correction factor
+  
   while (!faceLocked) {
     if (millis() - steerLast >= 2500) {
       steerLast = millis();
@@ -117,20 +171,52 @@ void faceDetectionSequence() {
       leftRight(steerAngle);
     }
     if (Serial.available()) {
-      char sig = Serial.read();
-      if (sig == 'L') faceLocked = true;
+      if (cmd == 'L') faceLocked = true;
     }
   }
-  leftRight(90);
-  playWalleSound();
-  sweep(&leftEye, 90, 60, 400);
-  sweep(&rightEye, 90, 60, 400);
-  for (int i = 0; i < 4; i++) {
-    leftGrip(180); delay(300); leftGrip(0); delay(300);
+  if(faceLocked){
+    Expression(2);
+    while (!reached) {
+      distance = getDistance();
+      mpu.update();
+      float error = targetHeading - mpu.getAngleZ();
+      int correction = (int)(error * Kp);
+
+    if (distance <= 6 && distance > 0) {
+      stopMoving();
+      reached = true;
+    } 
+    else {
+      // Speed logic
+      int baseSpeed = (distance > 16) ? MID_SPEED : 120;
+      
+      // Apply MPU precision steering
+      analogWrite(EN_A, constrain(baseSpeed + correction, 0, 255)); 
+      digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+      
+      analogWrite(EN_B, constrain(baseSpeed - correction, 0, 255)); 
+      digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+    }
   }
-  delay(10000);
-  neutral();
-  moveForward();
+  delay(30); 
+}
+  // --- PHASE 3: Expressive Reaction ---
+  if(faceLocked && reached){
+    leftRight(90);
+    playWalleSound();
+    sweep(&leftEye, 90, 60, 400);
+    sweep(&rightEye, 90, 60, 400);
+  
+    for (int i = 0; i < 4; i++) {
+      leftGrip(180); delay(300); 
+      leftGrip(0);   delay(300);
+    }
+  
+    delay(5000); // Wait 5 seconds to "interact"
+    Expression(0);
+    delay(10);1
+    neutral();
+  }
 }
 
 // 4. الـ Setup والـ Loop
@@ -150,7 +236,7 @@ void setup() {
 
 void loop() {
   if (Serial.available()) {
-    char cmd = Serial.read();
+    cmd = Serial.read();
     if (cmd == 'O') objectDetectionSequence();
     else if (cmd == 'F') faceDetectionSequence();
   }
